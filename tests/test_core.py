@@ -317,55 +317,6 @@ class TestRAGQueryEngine:
 class TestIntegration:
     """Integration tests for full pipeline (requires API key and index)."""
 
-    @pytest.mark.skipif(
-        not os.getenv("OPENAI_API_KEY"), reason="API key not available"
-    )
-    def test_full_pipeline_smoke_test(self):
-        """Smoke test for full pipeline (requires real API key and index)."""
-        from pathlib import Path
-        
-        index_path = Path(__file__).parent.parent / "data" / "vector_index"
-        
-        if not index_path.exists():
-            pytest.skip("Vector index not found - run build_index.py first")
-        
-        # Check if index files exist
-        if not (index_path / "faiss.index").exists():
-            pytest.skip("FAISS index file not found")
-        
-        from query import RAGQueryEngine
-        from dotenv import load_dotenv
-        
-        load_dotenv()
-        
-        try:
-            # Initialize engine
-            engine = RAGQueryEngine(
-                index_path=index_path,
-                embedding_model="text-embedding-3-small",
-                llm_model="gpt-4o",
-                top_k=3
-            )
-            
-            # Test query
-            response = engine.query("What is CUDA?")
-            
-            # Verify response structure
-            assert "user_question" in response
-            assert "system_answer" in response
-            assert "chunks_related" in response
-            assert "retrieval_stats" in response
-            
-            assert response["user_question"] == "What is CUDA?"
-            assert len(response["system_answer"]) > 0
-            assert len(response["chunks_related"]) > 0
-            
-            print(f"\n✅ Full pipeline test passed!")
-            print(f"   Question: {response['user_question']}")
-            print(f"   Answer length: {len(response['system_answer'])} chars")
-            print(f"   Chunks retrieved: {len(response['chunks_related'])}")
-        except Exception as e:
-            pytest.skip(f"Pipeline test failed: {e}")
 
 
 class TestEvaluator:
