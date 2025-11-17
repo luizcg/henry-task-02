@@ -701,6 +701,86 @@ Edit `.env` to customize behavior:
 | `SIMILARITY_THRESHOLD` | `0.7` | Minimum relevance score |
 | `VECTOR_STORE_TYPE` | `faiss` | Vector store backend |
 
+### Metrics Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_METRICS` | `false` | Enable/disable metrics logging |
+| `METRICS_DIR` | `logs` | Directory for metrics logs |
+| `METRICS_VERBOSE` | `false` | Log full content (vs previews) |
+| `METRICS_ANSWER_PREVIEW_LENGTH` | `100` | Characters for answer preview |
+| `METRICS_CHUNK_PREVIEW_LENGTH` | `80` | Characters for chunk preview |
+
+---
+
+## 📊 Metrics & Monitoring
+
+The system automatically logs per-run metrics when `ENABLE_METRICS=true`:
+
+### Logged Metrics
+
+Each query/evaluation logs:
+- **Tokens**: `prompt`, `completion`, `total`
+- **Latency**: Milliseconds for operation
+- **Cost**: Estimated USD cost based on OpenAI pricing
+- **Model**: LLM model used
+- **Timestamp**: UTC timestamp
+- **Question**: User query
+- **Answer Preview**: First 100 chars (or full in verbose mode)
+- **Chunks**: Top 3 chunks with scores (or all in verbose mode)
+
+### Log Format
+
+**JSON Lines (`.jsonl`)** - one line per operation:
+
+```jsonl
+{"timestamp":"2025-11-17T00:30:00Z","operation":"query","question":"What is CUDA?","answer_preview":"CUDA is NVIDIA's parallel computing platform...","answer_length":487,"chunks_count":5,"chunks_summary":[{"rank":1,"score":0.92,"length":1024,"preview":"Q12: What is CUDA?..."}],"tokens":{"prompt":450,"completion":120,"total":570},"latency_ms":2341.23,"cost_usd":0.008705,"model":"gpt-4o"}
+```
+
+### Log Files
+
+```
+logs/
+└── metrics_YYYY-MM-DD.jsonl  # Daily rotation
+```
+
+### Analyzing Metrics
+
+```bash
+# Total cost today
+cat logs/metrics_$(date +%Y-%m-%d).jsonl | jq -s 'map(.cost_usd) | add'
+
+# Average latency
+cat logs/metrics_*.jsonl | jq -s 'map(.latency_ms) | add/length'
+
+# Top 10 expensive queries
+cat logs/metrics_*.jsonl | jq -s 'sort_by(.cost_usd) | reverse | .[0:10] | .[] | {cost: .cost_usd, question}'
+
+# Queries over 3 seconds
+cat logs/metrics_*.jsonl | jq 'select(.latency_ms > 3000) | {latency: .latency_ms, question}'
+
+# Total tokens per day
+cat logs/metrics_$(date +%Y-%m-%d).jsonl | jq -s 'map(.tokens.total) | add'
+
+# Cost by operation
+cat logs/metrics_*.jsonl | jq -s 'group_by(.operation) | map({operation: .[0].operation, total_cost: map(.cost_usd) | add})'
+```
+
+### Verbose Mode
+
+For debugging, enable verbose logging to capture full content:
+
+```bash
+# Set in .env
+METRICS_VERBOSE=true
+
+# Or per-command
+METRICS_VERBOSE=true python src/query.py "What is CUDA?"
+```
+
+**Warning**: Verbose logs can be 10x larger (~5-10KB per line vs ~600 bytes).
+
+---
 
 ## 🚧 Known Limitations
 

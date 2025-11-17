@@ -4,7 +4,10 @@ Evaluates answer quality based on relevance, accuracy, completeness, and grounde
 """
 
 import os
+import sys
+import time
 import warnings
+from pathlib import Path
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 
@@ -14,6 +17,10 @@ warnings.filterwarnings("ignore", message=".*Pydantic V1 functionality.*")
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import HumanMessage, SystemMessage
+
+# Add src to path for imports
+sys.path.append(str(Path(__file__).parent))
+from metrics_logger import MetricsLogger
 
 
 class RAGEvaluator:
@@ -36,6 +43,10 @@ class RAGEvaluator:
         """
         self.llm_model = llm_model
         self.llm = ChatOpenAI(model=llm_model, temperature=temperature)
+
+        # Initialize metrics logger
+        metrics_verbose = os.getenv("METRICS_VERBOSE", "false").lower() == "true"
+        self.metrics_logger = MetricsLogger(verbose=metrics_verbose)
 
         # Evaluation criteria with weights
         self.criteria = {
@@ -125,6 +136,9 @@ Provide your evaluation as JSON with:
         Returns:
             Evaluation dict with score, reasoning, and breakdown
         """
+        # Start timing for metrics
+        start_time = time.time()
+        
         # Build evaluation prompt
         context_summary = self._format_chunks(chunks_related)
 
@@ -171,6 +185,20 @@ Return a JSON object with this exact structure:
             response = self.llm.invoke(messages)
             evaluation_text = response.content
 
+            # Extract token usage from response
+            tokens = {
+                "prompt": 0,
+                "completion": 0,
+                "total": 0,
+            }
+            if hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
+                usage = response.response_metadata["token_usage"]
+                tokens = {
+                    "prompt": usage.get("prompt_tokens", 0),
+                    "completion": usage.get("completion_tokens", 0),
+                    "total": usage.get("total_tokens", 0),
+                }
+
             # Parse JSON response
             import json
             import re
@@ -195,6 +223,17 @@ Return a JSON object with this exact structure:
                 "evaluator_model": self.llm_model,
                 "evaluation_criteria": self.criteria,
             }
+
+            # Calculate latency and log metrics
+            latency_ms = (time.time() - start_time) * 1000
+            self.metrics_logger.log_evaluation(
+                question=user_question,
+                answer=system_answer,
+                evaluation=evaluation,
+                tokens=tokens,
+                latency_ms=latency_ms,
+                model=self.llm_model,
+            )
 
             return evaluation
 

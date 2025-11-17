@@ -6,6 +6,7 @@ Accepts user questions, performs vector search, and generates answers using LLM.
 import os
 import sys
 import json
+import time
 import warnings
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -22,6 +23,7 @@ from langchain.schema import HumanMessage, SystemMessage
 sys.path.append(str(Path(__file__).parent))
 from vector_store_adapter import create_vector_store
 from evaluator import RAGEvaluator
+from metrics_logger import MetricsLogger
 
 # Global verbosity flag (set by CLI args)
 VERBOSE_MODE = False
@@ -77,6 +79,10 @@ class RAGQueryEngine:
 
         # Initialize evaluator if enabled
         self.evaluator = RAGEvaluator(llm_model=llm_model) if enable_evaluation else None
+
+        # Initialize metrics logger
+        metrics_verbose = os.getenv("METRICS_VERBOSE", "false").lower() == "true"
+        self.metrics_logger = MetricsLogger(verbose=metrics_verbose)
 
         # System prompt for answer generation
         self.system_prompt = """You are an expert AI assistant for NVIDIA's financial and technical information.
@@ -213,6 +219,20 @@ Please provide a comprehensive answer based on the context above."""
         response = self.llm.invoke(messages)
         answer = response.content
 
+        # Extract token usage from response
+        tokens = {
+            "prompt": 0,
+            "completion": 0,
+            "total": 0,
+        }
+        if hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
+            usage = response.response_metadata["token_usage"]
+            tokens = {
+                "prompt": usage.get("prompt_tokens", 0),
+                "completion": usage.get("completion_tokens", 0),
+                "total": usage.get("total_tokens", 0),
+            }
+
         # Build response
         return {
             "user_question": question,
@@ -226,6 +246,7 @@ Please provide a comprehensive answer based on the context above."""
                 }
                 for chunk in chunks
             ],
+            "tokens": tokens,
             "retrieval_stats": {
                 "chunks_retrieved": len(chunks),
                 "top_k": self.top_k,
@@ -252,6 +273,9 @@ Please provide a comprehensive answer based on the context above."""
         Returns:
             Complete query response with answer and chunks
         """
+        # Start timing for metrics
+        start_time = time.time()
+        
         vprint(f"\n🔍 Processing query: '{question}'")
 
         # Retrieve relevant chunks
@@ -262,6 +286,7 @@ Please provide a comprehensive answer based on the context above."""
                 "user_question": question,
                 "system_answer": "I couldn't find relevant information in the knowledge base to answer this question. Please try rephrasing or asking about a different topic.",
                 "chunks_related": [],
+                "tokens": {"prompt": 0, "completion": 0, "total": 0},
                 "retrieval_stats": {
                     "chunks_retrieved": 0,
                     "top_k": k or self.top_k,
@@ -277,6 +302,20 @@ Please provide a comprehensive answer based on the context above."""
         response = self.generate_answer(question, chunks)
 
         vprint(f"✅ Generated answer ({len(response['system_answer'])} chars)")
+
+        # Calculate latency
+        latency_ms = (time.time() - start_time) * 1000
+
+        # Log metrics
+        self.metrics_logger.log(
+            operation="query",
+            question=question,
+            answer=response["system_answer"],
+            chunks=response["chunks_related"],
+            tokens=response["tokens"],
+            latency_ms=latency_ms,
+            model=self.llm_model,
+        )
 
         # Evaluate if enabled
         if self.evaluator:
