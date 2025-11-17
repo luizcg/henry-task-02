@@ -812,7 +812,7 @@ METRICS_VERBOSE=true python src/query.py "What is CUDA?"
 
 MIT License - see LICENSE file
 
-## 👤 Author
+## 👤 Author: Luiz Garcia
 
 Created for Henry AI Engineer Task 02
 
