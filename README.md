@@ -798,7 +798,6 @@ METRICS_VERBOSE=true python src/query.py "What is CUDA?"
 - [ ] Implement `ChromaAdapter` for vector store migration
 - [ ] Add query caching with Redis
 - [ ] Implement reranking with cross-encoder
-- [ ] Add evaluation agent (0-10 scoring)
 - [ ] Deploy as REST API with FastAPI
 - [ ] Add streaming responses
 - [ ] Implement hybrid search (BM25 + vector)
